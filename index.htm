@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html>
+  
+  <head>
+    <link rel="icon" href="data:,">
+    <script src="lib/x3dom.js"></script>
+  </head>
+
+  <body style="margin:0; position:absolute; width: 100%; height: 100%; padding: 0;">
+
+    <div id="sceneTitle" style="position:absolute; top: 0; left: 0; font-size:45px; padding:15px; font-family: 'Optima'; color: grey;">
+      XXX
+    </div>
+
+    <x3d PrimitiveQuality="low" width=100% height=100%>
+      <scene id="scene3D"> 
+        <Viewpoint position="-7.96976 20.83851 26.33028" orientation="-0.75475 -0.65590 0.01189 0.78891" zNear="1" zFar="1000.00000" centerOfRotation="0.00000 0.00000 0.00000" fieldOfView="0.78540" description="defaultX3DViewpointNode"></Viewpoint>
+
+      </scene> 
+    </x3d> 
+
+    <script>
+
+      var grid = {};
+      var wires = [];
+      var numWires = 0;
+      var wireSize = 0.3;
+      var transparency = 0.1;
+      var permutationDelay = 500;
+
+      var scene = document.getElementById("scene3D");
+      var sceneTitle = document.getElementById("sceneTitle");
+
+      // Basic building blocks
+      var appearance = document.createElement("appearance");
+      var material = document.createElement("material");
+      var transform = document.createElement("transform");
+      var shape = document.createElement("shape");
+      var box = document.createElement("box");
+      material.setAttribute("diffuseColor", "0 0 1");
+      material.setAttribute("transparency", transparency.toString());
+
+      box.setAttribute("size", "1 0.1 0.1");
+      appearance.appendChild(material);
+      shape.appendChild(appearance);
+      shape.appendChild(box);
+      transform.appendChild(shape);
+
+
+      function drawWire(x, y, z, axis, len = 1, color, localTransparency, hideExtremities = false) {  // axis 0: x, axis 1: y, axis 2: z
+        //var wire = wires[axis].cloneNode(true);
+        var wire = transform.cloneNode(true);
+        var coords = [x, y, z];
+        var size = [wireSize, wireSize, wireSize];
+        coords[axis] += len / 2;//0.5;
+        size[axis] += len;
+
+        // for transistors to avoid color fusion effects
+        if ( hideExtremities )
+          size[axis] -= 2*wireSize;
+
+        wire.getElementsByTagName('box')[0].setAttribute("size", size.join());
+        wire.setAttribute("translation", coords.join());
+        
+        if ( color ) {
+          var mat = wire.getElementsByTagName('material')[0];
+          mat.setAttribute("diffuseColor", color);
+        }
+
+        if ( !isNaN(localTransparency) ) {
+          var mat = wire.getElementsByTagName('material')[0];
+          mat.setAttribute("transparency", localTransparency);
+        }
+
+        scene.appendChild(wire);
+      }
+
+
+      function drawUnitVectors() {
+        // Origin and unit vectors
+        for ( var i = 0; i < 10; i += 2 ) {
+          drawWire(i, 0, 0, 0, 1, '1 0 0', undefined, true);
+          drawWire(0, i, 0, 1, 1, '0 1 0', undefined, true); 
+          drawWire(0, 0, i, 2, 1, '0 0 1', undefined, true);
+        }
+      }
+
+
+      function generateRandomPermutation(N) {
+        // ChatGPT suggestion
+        // Create an array of numbers from 0 to N-1
+        const arr = Array.from({length: N}, (_, i) => i);
+
+        // Perform Fisher-Yates shuffle on the array
+        for (let i = N - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+
+        return arr;
+      }
+
+      function getInversePermutation(permutation) {
+        var inversePermutation = Array();
+        var h = permutation.length;
+        for ( var i = 0; i < h; i++ ) {
+          var perm = permutation[i];
+          if ( typeof(perm) == "number" )
+            perm = [ perm ];
+          for ( var k in perm ) {
+            var number = perm[k];
+            if ( inversePermutation[number] == undefined ) 
+              inversePermutation[number] = i;
+            else {
+              if ( typeof(inversePermutation[number]) == "number" )
+                inversePermutation[number] = [ inversePermutation[number], i ];
+              else
+                inversePermutation[number].push(i);
+            }
+          }
+        }        
+        return inversePermutation;
+      }
+
+      function getMaxPerm(permutation, i, shift) {
+        if ( !permutation )
+          return undefined;
+        var perm = permutation[i];
+        if ( typeof(perm) == "object" ) {
+          if ( !perm )  // undefined or []
+            return undefined;
+          if ( shift == 0 )
+            perm = perm[ 0 ];  // minimum value
+          else
+            perm = perm[ perm.length - 1 ];  // maximum value
+        }
+        return perm;
+      }
+
+      function getPerms(permutation, i) {
+        if ( !permutation )
+          return undefined;
+        var perms = permutation[i];
+        if ( typeof(perms) == "object" ) {
+          if ( !perms )  // undefined or []
+            return undefined;
+        } else {
+          perms = [ perms ];
+        }
+        return perms;
+      }      
+
+      const YZ = 0, XZ = 1, XY = 2;
+
+      function drawCrossBar2(w, h, x = 0, y = 0, z = 0, plane = XZ, shift_h = 0, shift_w = 1, w_space = 1, h_space = 1, color, localTransparency) {
+
+        //function drawWire(x, y, z, axis, len = 1, color, localTransparency, hideExtremities = false) {  // axis 0: x, axis 1: y, axis 2: z
+
+        // Basic wxh crossbar
+        switch ( plane ) {
+          //-------------------
+          case XZ: 
+            // Wires parallel to X axis (0)
+            for ( var i = 0; i < h; i++ ) {
+              drawWire(x, y, z + h_space * (i + shift_h), 0, w * w_space, color, localTransparency);
+            }
+            // Wires parallel to Z axis (2)
+            for ( var j = 0; j < w; j++ ) {
+              drawWire(x + w_space * (j + shift_w), y + 1, z, 2, h * h_space, color, localTransparency);
+            }
+            // Xistors parallel to Y axis (1)
+            for ( var i = 0; i < h; i++ ) {
+              for ( var j = 0; j < w; j++ ) {
+                drawWire(x + w_space * (j + shift_w), y, z + h_space * (i + shift_h), 1, 1, '0.7 0.7 0.7', localTransparency, true);
+              }
+            }
+            break;
+          
+          //-------------------
+          case YZ:
+            // Wires parallel to Y axis (1) 
+            for ( var i = 0; i < h; i++ ) {
+              drawWire(x, y, z + h_space * (i + shift_h), 1, w * w_space, color, localTransparency);
+            }
+            // Wires parallel to Z axis (2)
+            for ( var j = 0; j < w; j++ ) {
+              drawWire(x + 1, y + w_space * (j + shift_w), z, 2, h * h_space, color, localTransparency);
+            }
+            // Xistors parallel to X axis (0)
+            for ( var i = 0; i < h; i++ ) {
+              for ( var j = 0; j < w; j++ ) {
+                drawWire(x, y + w_space * (j + shift_w), z + h_space * (i + shift_h), 0, 1, '0.7 0.7 0.7', localTransparency, true);
+              }
+            }
+            break;
+          
+          //-------------------
+          case XY:
+            // Wires parallel to X axis (0) 
+            for ( var i = 0; i < h; i++ ) {
+              drawWire(x, y + h_space * (i + shift_h), z, 0, w * w_space, color, localTransparency);
+            }
+            // Wires parallel to Y axis (1)
+            for ( var j = 0; j < w; j++ ) {
+              drawWire(x + w_space * (j + shift_w), y, z + 1, 1, h * h_space, color, localTransparency);            
+            }
+            // Xistors parallel to Z axis (2)
+            for ( var i = 0; i < h; i++ ) {
+              for ( var j = 0; j < w; j++ ) {
+                drawWire(x + w_space * (j + shift_w), y + h_space * (i + shift_h), z, 2, 1, '0.7 0.7 0.7', localTransparency, true);
+              }
+            }
+            break;
+        }
+      }
+
+
+      function drawCrossLink(w, h, x = 0, y = 0, z = 0, plane = XZ, shift_h = 0, shift_w = 1, w_space = 1, h_space = 1, color, input, output) {
+
+        //function drawWire(x, y, z, axis, len = 1, color, localTransparency, hideExtremities = false) {  // axis 0: x, axis 1: y, axis 2: z
+
+        switch ( plane ) {
+          //-------------------
+          case XZ: 
+            // Wires parallel to X axis (0)
+            var i = input;
+            var perm = output;            
+            drawWire(shift_w ? x : x + perm * w_space, y, z + h_space * (i + shift_h), 0, shift_w ? ( perm + shift_w ) * w_space : ( w - perm - shift_w ) * w_space, color, 0.0);
+
+            // Wires parallel to Z axis (2)
+            var j = output;
+            var perm = input;
+            drawWire(x + w_space * (j + shift_w), y + 1, shift_h ? z : z + perm * h_space, 2, shift_h ? ( perm + shift_h ) * h_space : ( h - perm - shift_h ) * h_space, color, 0.0);
+            
+            // Xistors parallel to Y axis (1)
+            var i = input;
+            var perm = output;
+            drawWire(x + w_space * (perm + shift_w), y, z + h_space * (i + shift_h), 1, 1, color, 0.0);
+
+            break;
+          
+          //-------------------
+          case YZ:
+            // Wires parallel to Y axis (1) 
+            var i = input;
+            var perm = output;            
+            drawWire(x, shift_w ? y : y + perm * w_space, z + h_space * (i + shift_h), 1, shift_w ? ( perm + shift_w ) * w_space : ( w - perm - shift_w ) * w_space, color,  0.0);
+
+            // Wires parallel to Z axis (2)
+            var j = output;
+            var perm = input;
+            drawWire(x + 1, y + w_space * (j + shift_w), shift_h ? z : z + perm * h_space, 2, shift_h ? (perm + shift_h) * h_space : ( h - perm - shift_h ) * h_space, color,  0.0);
+
+            // Xistors parallel to X axis (0)
+            var i = input;
+            var perm = output;
+            drawWire(x, y + w_space * (perm + shift_w), z + h_space * (i + shift_h), 0, 1, color,  0.0);            
+            break;
+          
+          //-------------------
+          case XY:
+            // Wires parallel to X axis (0) 
+            var i = input;
+            var perm = output;            
+            drawWire(shift_w ? x : x + perm * w_space, y + h_space * (i + shift_h), z, 0, shift_w ? (perm + shift_w) * w_space : ( w - perm - shift_w ) * w_space, color,  0.0);
+
+            // Wires parallel to Y axis (1)
+            var j = output;
+            var perm = input;
+            drawWire(x + w_space * (j + shift_w), shift_h ? y : y + perm * h_space, z + 1, 1, shift_h ? (perm + shift_h) * h_space : ( h - perm - shift_h ) * h_space, color,  0.0);
+
+            // Xistors parallel to Z axis (2)
+            var i = input;
+            var perm = output;
+            drawWire(x + w_space * (perm + shift_w), y + h_space * (i + shift_h), z, 2, 1, color, 0.0);
+            break;
+        }
+
+      }
+
+
+      var crossBars = {};  // 
+
+      // so that we can create connections later on
+      function createCrossBar( w, h, x = 0, y = 0, z = 0, plane = XZ, shift_h = 0, shift_w = 0, w_space = 1, h_space = 1, color, id, direction ) {
+        var localTransparency = 0.89;  // before permutations
+        var args = [...arguments].slice(0, -2); // removes ID and direction
+        //crossBars[id][ crossBars[id].length ] = localTransparency;
+        drawCrossBar2.apply(null, args.concat(localTransparency));
+
+        // saves direction and "tick" information for next time        
+        args.direction = direction; // default 
+        args.output = direction == -1 ? w-1 : 0;
+        crossBars[id] = args;
+      }
+
+      function fireCrossBar(id, input, reverse = false) {
+        var args = crossBars[id];
+        var w = args[0];
+        if ( input !== null ) {
+          if ( reverse )
+            drawCrossLink.apply(null, crossBars[id].concat([args.output, input]));
+          else
+            drawCrossLink.apply(null, crossBars[id].concat([input, args.output]));
+        }
+        // update output for next time
+        var previousOutput = args.output;
+        args.output = ( args.output + args.direction + w ) % w;  // add w to avoid negative number
+
+        return previousOutput;  // to allow multi-block sorting
+
+      }
+
+      var lastPosition = "-7.96976 20.83851 26.33028";
+      var lastOrientation = "-0.75475 -0.65590 0.01189 0.78891";
+
+      function clearScene(position = lastPosition, orientation = lastOrientation) {
+        lastPosition = position;
+        lastOrientation = orientation;
+
+        sceneTitle.innerText = "";
+        scene.innerHTML = '<Viewpoint position="'+position+'" orientation="'+orientation+'" zNear="1" zFar="1000.00000" centerOfRotation="0.00000 0.00000 0.00000" fieldOfView="0.78540" description="defaultX3DViewpointNode"></Viewpoint>';
+        crossBars = {};
+
+      }
+
+      // ------------------------- BEGIN -------------------------
+      //drawUnitVectors();
+
+
+      var N = Math.pow(2, 6);  // 64
+      var side = Math.sqrt(N); // 8
+      var side = 4;
+
+      function waitingKeypress() {
+        return new Promise((resolve) => {
+          document.addEventListener('keydown', onKeyHandler);
+          function onKeyHandler(e) {
+            console.log(e.keyCode);
+            if (e.keyCode === 32) {  // 32 space, 221 "$" key
+              document.removeEventListener('keydown', onKeyHandler);
+              resolve();
+            }
+          }
+        });
+      }
+
+      function addText(txt) {
+        sceneTitle.innerHTML = txt;
+      }
+
+
+      async function plotStages() {
+
+        clearScene("-1.61324 12.16734 12.54312", "-0.87822 -0.47215 -0.07621 1.06184");
+
+        // sorting 4x4 crossbar animation (press $ to fire)
+        var perm1D = [2, 0, 3, 1]; //generateRandomPermutation(side);
+        var perm1DPlusOne = perm1D.map(x => x + 1);
+
+
+        addText("2D Sorting Crossbar<br/><span style='font-size:29px'>Learning (" + perm1DPlusOne.join(',') +  ") </span> <br/><span style='font-size:29px'>Press SPACE to animate</span>");  // 1        
+        createCrossBar(side, side, 0, 0, 0, XZ, 1, 1, 2, 2, '1 0 0', 0, 1);  // ..., crossbarId, direction
+        await waitingKeypress();
+        for ( var index in perm1D ) {
+          fireCrossBar(0, perm1D[index]);  // crossbarId, from          
+          await waitingKeypress();
+        }
+
+        // Programmable 6-cube MDSA
+        //var side = 4;
+
+        clearScene("-7.81697 30.71825 39.54828", "-0.74525 -0.65572 0.12098 0.56574");    
+
+        var perm2D = [2,0,4,10,8,5,3,12,14,15,13,7,11,9,6,1];
+        var perm2DPlusOne = perm2D.map(x => x + 1);
+
+        //var perm2D = generateRandomPermutation(side * side);
+
+        addText("3D Spike Sorting Network<br/><span style='font-size:29px'>Learning (" + perm2DPlusOne.join(',') + ")</span><br/><span style='font-size:29px'>Press SPACE to animate</span>");
+        for ( var row = 0; row < side; row++ )
+          createCrossBar(side, side, 0, 2 * row, 0, XZ, 1, 1, 2, 2, '1 0 0', "0."+row.toString(), 1); // ..., crossbarId, direction
+
+
+
+        for ( var row = 0; row < side; row++ )
+          createCrossBar(side, side, 1 + 2 * row, 1, -side * 2, YZ, 0, 0, 2, 2, row % 2 == 1 ? '0 0 0.3' : '0 0 1', "1."+row.toString(), row % 2 == 1 ? -1 : 1);
+        for ( var row = 0; row < side; row++ )
+          createCrossBar(side, side, 1, 1 + side*2, -3 - 2 * row, XY, 1, 0, 2, 2, '1 0.75 0', "2."+row.toString(), 1);
+        
+        for ( var row = 0; row < side; row++ )
+          createCrossBar(side, side, 1 + side*2, 2*row + 3+side*2, -3 -2*side, XZ, 1, 1, 2, 2, row % 2 == 0 ? '0.3 0 0' : '1 0 0', "3."+row.toString(), row % 2 == 0 ? -1 : 1);      
+        for ( var row = 0; row < side; row++ )
+          createCrossBar(side, side, 2 + side*2 + 2 * row, 4 + side*2, -3 -side * 4, YZ, 0, 0, 2, 2, '0 0 1', "4."+row.toString(), 1);    
+        for ( var row = 0; row < side; row++ )
+          createCrossBar(side, side, 2+side*2, 4 + side*4, -6 -side*2 - 2*row, XY, 1, 0, 2, 2, '1 0.75 0', "5."+row.toString(), 1);      
+
+        await waitingKeypress();
+
+        for ( index in perm2D ) {
+          var p = perm2D[index];
+          var remainder = p % side;
+          var divisor = (p - remainder) / side;
+          var crossBarId0 = "0" + "." + remainder.toString() ;
+          var outputIndex0 = fireCrossBar(crossBarId0, divisor );
+
+          await waitingKeypress();
+
+          var crossBarId1 = "1" + "." + outputIndex0.toString();
+          var outputIndex1 = fireCrossBar(crossBarId1, remainder, true);  // reverse  // divisor
+
+          await waitingKeypress();
+
+          var crossBarId2 = "2" + "." + (side-1-outputIndex1).toString();
+          var outputIndex2 = fireCrossBar(crossBarId2, outputIndex0, true);  // reverse          
+
+          await waitingKeypress();
+
+          var crossBarId3 = "3" + "." + outputIndex2.toString();
+          var outputIndex3 = fireCrossBar(crossBarId3, outputIndex1, false);  //       
+
+          await waitingKeypress();
+
+          var crossBarId4 = "4" + "." + outputIndex3.toString();
+          var outputIndex4 = fireCrossBar(crossBarId4, outputIndex2, true);  // reversed after breaking [2,0,4,10,8,5,3,12,14,15,13,7,11,9,6,1] at the 8th pos.        
+
+          await waitingKeypress();
+
+          var crossBarId5 = "5" + "." + (side-1-outputIndex4).toString();
+          var outputIndex5 = fireCrossBar(crossBarId5, outputIndex3, true);  // reverse          
+
+          await waitingKeypress();
+
+        }
+
+
+      }
+
+      plotStages();
+
+
+    </script>
+
+  </body>
+
+</html>
