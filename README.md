@@ -1,3 +1,3 @@
-3D Spike Sorting Network / Animation
+3D Spike Sorting Network
 
-The permutation or the crosbar size can be changed in index.htm.
+The permutation or the crossbar size can be changed in index.htm.
